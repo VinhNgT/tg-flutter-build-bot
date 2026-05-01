@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.templating import Jinja2Templates
 
+from ..bot_manager import BotManager
 from ..drive.uploader import DriveUploader
 from ..store import Store
 from .routes import create_routes
@@ -14,7 +15,9 @@ from .routes import create_routes
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 
 
-def create_app(store: Store, drive_uploader: DriveUploader) -> FastAPI:
+def create_app(
+    store: Store, drive_uploader: DriveUploader, bot_manager: BotManager
+) -> FastAPI:
     """Create and configure the FastAPI application."""
     app = FastAPI(
         title="Flutter Build Bot",
@@ -24,7 +27,7 @@ def create_app(store: Store, drive_uploader: DriveUploader) -> FastAPI:
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
     # Include routes
-    router = create_routes(store, drive_uploader, templates)
+    router = create_routes(store, drive_uploader, bot_manager, templates)
     app.include_router(router)
 
     return app

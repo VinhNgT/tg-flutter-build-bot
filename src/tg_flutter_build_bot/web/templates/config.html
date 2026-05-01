@@ -7,7 +7,11 @@
 <h1>Configuration</h1>
 
 {% if request.query_params.get('saved') %}
-<div class="alert alert-success">✅ Configuration saved successfully.</div>
+    {% if bot_running %}
+    <div class="alert alert-success">✅ Configuration saved. <a href="/" style="color: var(--success); text-decoration: underline;">Restart the bot</a> from the Dashboard to apply changes.</div>
+    {% else %}
+    <div class="alert alert-success">✅ Configuration saved. <a href="/" style="color: var(--success); text-decoration: underline;">Start the bot</a> from the Dashboard.</div>
+    {% endif %}
 {% endif %}
 
 <form method="post" action="/config">
@@ -107,7 +111,7 @@
             <input type="number" name="web_port"
                    value="{{ config.web_port }}"
                    min="1024" max="65535">
-            <div class="hint">Requires restart to take effect</div>
+            <div class="hint">Requires a full application restart to take effect</div>
         </div>
     </div>
 

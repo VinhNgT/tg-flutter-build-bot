@@ -6,12 +6,33 @@
 {% block content %}
 <h1>Dashboard</h1>
 
+{% if not bot_running %}
+<div class="alert alert-warning">
+    ⚠️ Telegram bot is not running.
+    {% if not config.telegram_token %}
+        <a href="/config" style="color: var(--warning); text-decoration: underline;">Configure the Bot Token</a>, then start it here.
+    {% else %}
+        Start it using the button below.
+    {% endif %}
+</div>
+{% endif %}
+
+{% if request.query_params.get('bot') == 'started' %}
+<div class="alert alert-success">✅ Telegram bot started successfully.</div>
+{% elif request.query_params.get('bot') == 'stopped' %}
+<div class="alert alert-success">✅ Telegram bot stopped.</div>
+{% elif request.query_params.get('bot') == 'restarted' %}
+<div class="alert alert-success">✅ Telegram bot restarted with latest config.</div>
+{% endif %}
+
 <div class="card">
     <h2>Status</h2>
     <div class="status-grid">
         <div class="status-item">
-            <div class="label">Bot Status</div>
-            <div class="value" style="color: var(--success);">● Running</div>
+            <div class="label">Telegram Bot</div>
+            <div class="value" style="color: {% if bot_running %}var(--success){% else %}var(--warning){% endif %};">
+                {% if bot_running %}● Running{% else %}● Stopped{% endif %}
+            </div>
         </div>
         <div class="status-item">
             <div class="label">Google Drive</div>
@@ -27,6 +48,20 @@
             <div class="label">Total Builds</div>
             <div class="value">{{ builds | length }}</div>
         </div>
+    </div>
+    <div style="margin-top: 16px; display: flex; gap: 8px;">
+        {% if bot_running %}
+        <form method="post" action="/bot/restart" style="display: inline;">
+            <button type="submit" class="btn btn-outline">🔄 Restart Bot</button>
+        </form>
+        <form method="post" action="/bot/stop" style="display: inline;">
+            <button type="submit" class="btn btn-danger">⏹ Stop Bot</button>
+        </form>
+        {% else %}
+        <form method="post" action="/bot/start" style="display: inline;">
+            <button type="submit" class="btn btn-primary">▶ Start Bot</button>
+        </form>
+        {% endif %}
     </div>
 </div>
 

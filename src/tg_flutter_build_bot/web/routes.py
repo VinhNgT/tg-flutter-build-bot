@@ -8,6 +8,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from ..bot_manager import BotManager
 from ..config import get_effective_drive_folder_name
 from ..drive.uploader import DriveUploader
 from ..store import Store
@@ -18,9 +19,10 @@ logger = logging.getLogger(__name__)
 def create_routes(
     store: Store,
     drive_uploader: DriveUploader,
+    bot_manager: BotManager,
     templates: Jinja2Templates,
 ) -> APIRouter:
-    """Create all web routes bound to the given store and uploader."""
+    """Create all web routes bound to the given services."""
     router = APIRouter()
 
     # ------------------------------------------------------------------
@@ -43,6 +45,7 @@ def create_routes(
                 "drive_folder": get_effective_drive_folder_name(
                     config.drive_folder_name, config.repo_url
                 ),
+                "bot_running": bot_manager.bot_running,
             },
         )
 
@@ -65,6 +68,7 @@ def create_routes(
                 "sources": sources,
                 "saved": saved,
                 "oauth": oauth,
+                "bot_running": bot_manager.bot_running,
             },
         )
 
@@ -194,6 +198,25 @@ def create_routes(
     async def oauth_disconnect(request: Request):
         await store.clear_oauth()
         return RedirectResponse(url="/oauth?disconnected=1", status_code=303)
+
+    # ------------------------------------------------------------------
+    # Bot lifecycle
+    # ------------------------------------------------------------------
+
+    @router.post("/bot/start")
+    async def bot_start(request: Request):
+        await bot_manager.start_bot()
+        return RedirectResponse(url="/?bot=started", status_code=303)
+
+    @router.post("/bot/stop")
+    async def bot_stop(request: Request):
+        await bot_manager.stop_bot()
+        return RedirectResponse(url="/?bot=stopped", status_code=303)
+
+    @router.post("/bot/restart")
+    async def bot_restart(request: Request):
+        await bot_manager.restart_bot()
+        return RedirectResponse(url="/?bot=restarted", status_code=303)
 
     # ------------------------------------------------------------------
     # Builds
