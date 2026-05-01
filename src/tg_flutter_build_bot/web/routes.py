@@ -9,7 +9,13 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from ..bot_manager import BotManager
-from ..config import get_effective_drive_folder_name
+from ..config import (
+    BotConfig,
+    OAUTH_SECRET_FIELDS,
+    OAuthConfig,
+    SECRET_FIELDS,
+    get_effective_drive_folder_name,
+)
 from ..drive.uploader import DriveUploader
 from ..store import Store
 
@@ -41,6 +47,7 @@ def create_routes(
             {
                 "config": config,
                 "builds": builds[:5],
+                "has_token": bool(config.telegram_token),
                 "oauth_connected": bool(oauth.refresh_token),
                 "drive_folder": get_effective_drive_folder_name(
                     config.drive_folder_name, config.repo_url
@@ -57,17 +64,32 @@ def create_routes(
     async def config_page(request: Request):
         config = store.get_effective_config()
         sources = store.get_config_sources()
-        saved = store.get_saved_config()
-        oauth = store.get_saved_oauth()
+        oauth = store.get_oauth_config()  # Resolved (env-aware)
+        oauth_sources = store.get_oauth_sources()
+
+        # Mask secret fields — never send actual values to the front-end.
+        config_dict = config.model_dump()
+        for field in SECRET_FIELDS:
+            config_dict[field] = ""
+        masked_config = BotConfig(**config_dict)
+
+        oauth_dict = oauth.model_dump()
+        for field in OAUTH_SECRET_FIELDS:
+            oauth_dict[field] = ""
+        masked_oauth = OAuthConfig(**oauth_dict)
+
+        # Hardcoded defaults for placeholder hints.
+        defaults = BotConfig()
 
         return templates.TemplateResponse(
             request,
             "config.html",
             {
-                "config": config,
+                "config": masked_config,
                 "sources": sources,
-                "saved": saved,
-                "oauth": oauth,
+                "oauth": masked_oauth,
+                "oauth_sources": oauth_sources,
+                "defaults": defaults,
                 "bot_running": bot_manager.bot_running,
             },
         )
@@ -86,7 +108,13 @@ def create_routes(
             "drive_folder_name",
         ):
             value = form.get(key, "")
-            updates[key] = value if value else ""
+            if key in SECRET_FIELDS:
+                # Empty means "keep existing" — don't clear secrets.
+                if value:
+                    updates[key] = value
+                # else: omit from updates to preserve current value
+            else:
+                updates[key] = value if value else ""
 
         # Integer fields
         for key in ("cooldown_seconds", "max_builds", "web_port"):
@@ -115,19 +143,32 @@ def create_routes(
 
         await store.save_config(updates)
 
-        # Save OAuth client_id/secret separately
-        oauth = store.get_saved_oauth()
-        client_id = form.get("client_id", "") or oauth.client_id
-        client_secret = form.get("client_secret", "") or oauth.client_secret
+        # Save OAuth client_id/secret separately.
+        # Only persist if the user explicitly entered a value;
+        # empty submit preserves whatever is already saved (not env fallback).
+        saved_oauth = store.get_saved_oauth()
+        resolved_oauth = store.get_oauth_config()
 
-        from ..config import OAuthConfig
+        form_client_id = form.get("client_id", "")
+        form_client_secret = form.get("client_secret", "")
+
+        new_client_id = (
+            form_client_id
+            if form_client_id
+            else saved_oauth.client_id
+        )
+        new_client_secret = (
+            form_client_secret
+            if form_client_secret
+            else saved_oauth.client_secret
+        )
 
         await store.save_oauth(
             OAuthConfig(
-                client_id=client_id,
-                client_secret=client_secret,
-                refresh_token=oauth.refresh_token,
-                access_token=oauth.access_token,
+                client_id=new_client_id,
+                client_secret=new_client_secret,
+                refresh_token=resolved_oauth.refresh_token,
+                access_token=resolved_oauth.access_token,
             )
         )
 

@@ -18,15 +18,19 @@
     <div class="card">
         <h2>Bot Settings</h2>
 
+        {# --- Telegram Token (SECRET) --- #}
         <div class="form-group">
             <label>
                 Telegram Bot Token
                 <span class="badge badge-{{ sources.telegram_token }}">{{ sources.telegram_token }}</span>
             </label>
             <input type="password" name="telegram_token"
-                   value="{{ config.telegram_token }}"
+                   value=""
                    placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11">
-            <div class="hint">Get from @BotFather on Telegram</div>
+            <div class="hint">
+                {% if sources.telegram_token in ('env', 'saved') %}✓ Already set via {{ sources.telegram_token }}. Only enter a value to replace it.
+                {% else %}Get from @BotFather on Telegram.{% endif %}
+            </div>
         </div>
 
         <div class="form-group">
@@ -40,15 +44,19 @@
             <div class="hint">Git clone URL for the Flutter project</div>
         </div>
 
+        {# --- GitLab PAT (SECRET) --- #}
         <div class="form-group">
             <label>
                 GitLab PAT
                 <span class="badge badge-{{ sources.gitlab_pat }}">{{ sources.gitlab_pat }}</span>
             </label>
             <input type="password" name="gitlab_pat"
-                   value="{{ config.gitlab_pat }}"
+                   value=""
                    placeholder="glpat-xxxxxxxxxxxxxxxxxxxx">
-            <div class="hint">Optional. Personal Access Token for private GitLab repos (read_repository scope)</div>
+            <div class="hint">
+                {% if sources.gitlab_pat in ('env', 'saved') %}✓ Already set via {{ sources.gitlab_pat }}. Only enter a value to replace it.
+                {% else %}Optional. Personal Access Token for private GitLab repos (read_repository scope).{% endif %}
+            </div>
         </div>
 
         <div class="form-group">
@@ -57,8 +65,8 @@
                 <span class="badge badge-{{ sources.build_command }}">{{ sources.build_command }}</span>
             </label>
             <input type="text" name="build_command"
-                   value="{{ config.build_command }}"
-                   placeholder="flutter build apk --release">
+                   value="{% if sources.build_command != 'default' %}{{ config.build_command }}{% endif %}"
+                   placeholder="Default: {{ defaults.build_command }}">
         </div>
 
         <div class="form-group">
@@ -67,8 +75,8 @@
                 <span class="badge badge-{{ sources.build_output_path }}">{{ sources.build_output_path }}</span>
             </label>
             <input type="text" name="build_output_path"
-                   value="{{ config.build_output_path }}"
-                   placeholder="build/app/outputs/flutter-apk/app-release.apk">
+                   value="{% if sources.build_output_path != 'default' %}{{ config.build_output_path }}{% endif %}"
+                   placeholder="Default: {{ defaults.build_output_path }}">
             <div class="hint">Relative to repo root</div>
         </div>
 
@@ -89,8 +97,9 @@
                 <span class="badge badge-{{ sources.cooldown_seconds }}">{{ sources.cooldown_seconds }}</span>
             </label>
             <input type="number" name="cooldown_seconds"
-                   value="{{ config.cooldown_seconds }}"
-                   min="0" max="3600">
+                   value="{% if sources.cooldown_seconds != 'default' %}{{ config.cooldown_seconds }}{% endif %}"
+                   min="0" max="3600"
+                   placeholder="Default: {{ defaults.cooldown_seconds }}">
         </div>
 
         <div class="form-group">
@@ -99,8 +108,9 @@
                 <span class="badge badge-{{ sources.max_builds }}">{{ sources.max_builds }}</span>
             </label>
             <input type="number" name="max_builds"
-                   value="{{ config.max_builds }}"
-                   min="1" max="20">
+                   value="{% if sources.max_builds != 'default' %}{{ config.max_builds }}{% endif %}"
+                   min="1" max="20"
+                   placeholder="Default: {{ defaults.max_builds }}">
         </div>
 
         <div class="form-group">
@@ -120,8 +130,9 @@
                 <span class="badge badge-{{ sources.web_port }}">{{ sources.web_port }}</span>
             </label>
             <input type="number" name="web_port"
-                   value="{{ config.web_port }}"
-                   min="1024" max="65535">
+                   value="{% if sources.web_port != 'default' %}{{ config.web_port }}{% endif %}"
+                   min="1024" max="65535"
+                   placeholder="Default: {{ defaults.web_port }}">
             <div class="hint">Requires a full application restart to take effect</div>
         </div>
     </div>
@@ -130,22 +141,30 @@
         <h2>Google OAuth Credentials</h2>
 
         <div class="form-group">
-            <label>Client ID</label>
+            <label>
+                Client ID
+                <span class="badge badge-{{ oauth_sources.client_id }}">{{ oauth_sources.client_id }}</span>
+            </label>
             <input type="text" name="client_id"
                    value="{{ oauth.client_id }}"
                    placeholder="xxxx.apps.googleusercontent.com">
         </div>
 
+        {# --- Client Secret (SECRET) --- #}
         <div class="form-group">
-            <label>Client Secret</label>
+            <label>
+                Client Secret
+                <span class="badge badge-{{ oauth_sources.client_secret }}">{{ oauth_sources.client_secret }}</span>
+            </label>
             <input type="password" name="client_secret"
-                   value="{{ oauth.client_secret }}"
+                   value=""
                    placeholder="GOCSPX-xxxxxxxx">
             <div class="hint">
-                Get these from
+                {% if oauth_sources.client_secret in ('env', 'saved') %}✓ Already set via {{ oauth_sources.client_secret }}. Only enter a value to replace it.
+                {% else %}Get these from
                 <a href="https://console.cloud.google.com/apis/credentials" target="_blank"
                    style="color: var(--info);">Google Cloud Console</a>.
-                Set redirect URI to <code>http://localhost:{{ config.web_port }}/oauth/callback</code>
+                Set redirect URI to <code>http://localhost:{{ config.web_port or defaults.web_port }}/oauth/callback</code>.{% endif %}
             </div>
         </div>
     </div>

@@ -67,6 +67,10 @@ OAUTH_ENV_MAP: dict[str, str] = {
     "client_secret": "GOOGLE_CLIENT_SECRET",
 }
 
+# Fields whose values must never be sent to the front-end HTML.
+SECRET_FIELDS: set[str] = {"telegram_token", "gitlab_pat"}
+OAUTH_SECRET_FIELDS: set[str] = {"client_secret"}
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -228,3 +232,20 @@ def resolve_oauth(saved: OAuthConfig) -> OAuthConfig:
     data["access_token"] = saved.access_token
 
     return OAuthConfig(**data)
+
+
+def resolve_oauth_sources(saved: OAuthConfig) -> dict[str, str]:
+    """Return a dict mapping OAuth field names to their source.
+
+    Sources: 'saved', 'env', 'default'.
+    """
+    sources: dict[str, str] = {}
+    for field_name, env_var in OAUTH_ENV_MAP.items():
+        saved_value = getattr(saved, field_name)
+        if saved_value:
+            sources[field_name] = "saved"
+        elif os.environ.get(env_var, ""):
+            sources[field_name] = "env"
+        else:
+            sources[field_name] = "default"
+    return sources

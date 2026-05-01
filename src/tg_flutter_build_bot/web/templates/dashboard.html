@@ -9,7 +9,7 @@
 {% if not bot_running %}
 <div class="alert alert-warning">
     ⚠️ Telegram bot is not running.
-    {% if not config.telegram_token %}
+    {% if not has_token %}
         <a href="/config" style="color: var(--warning); text-decoration: underline;">Configure the Bot Token</a>, then start it here.
     {% else %}
         Start it using the button below.

@@ -15,6 +15,7 @@ from .config import (
     OAuthConfig,
     resolve_config,
     resolve_oauth,
+    resolve_oauth_sources,
 )
 
 logger = logging.getLogger(__name__)
@@ -136,6 +137,10 @@ class Store:
     def get_saved_oauth(self) -> OAuthConfig:
         """Return the raw saved OAuth config."""
         return self._oauth_config.model_copy()
+
+    def get_oauth_sources(self) -> dict[str, str]:
+        """Return a dict mapping OAuth field names to their source."""
+        return resolve_oauth_sources(self._oauth_config)
 
     async def save_oauth(self, oauth: OAuthConfig) -> None:
         """Save OAuth tokens to config.json."""
