@@ -352,7 +352,8 @@ async def status_handler(
 
     # Build status
     if build_service.is_building:
-        short = build_service.current_build[:7]
+        current = build_service.current_build
+        short = current[:7] if current else "unknown"
         lines.append(f"🔨 Currently building: `{short}`")
     else:
         lines.append("✅ Idle — ready for builds")
@@ -371,7 +372,7 @@ async def status_handler(
         lines.append("✅ No cooldown — ready")
 
     # Config summary
-    lines.append(f"\n📋 *Config*")
+    lines.append("\n📋 *Config*")
     lines.append(f"▸ Repo: `{config.repo_url or 'Not set'}`")
     lines.append(f"▸ Build cmd: `{config.build_command}`")
     lines.append(f"▸ Cooldown: {config.cooldown_seconds}s")

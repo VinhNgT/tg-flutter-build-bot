@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
-from functools import partial
 
 import uvicorn
 from dotenv import load_dotenv

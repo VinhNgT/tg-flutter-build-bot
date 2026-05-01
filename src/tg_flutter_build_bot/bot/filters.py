@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from telegram import Update
 from telegram.ext import filters
 
 from ..store import Store

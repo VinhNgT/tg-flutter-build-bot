@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import logging
-from urllib.parse import urlencode
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from ..builder.service import BuildService
 from ..config import get_effective_drive_folder_name
 from ..drive.uploader import DriveUploader
 from ..store import Store
@@ -189,7 +187,7 @@ def create_routes(
         except Exception as e:
             logger.error("OAuth exchange failed: %s", e)
             return RedirectResponse(
-                url=f"/oauth?error=exchange_failed"
+                url="/oauth?error=exchange_failed"
             )
 
     @router.post("/oauth/disconnect")
