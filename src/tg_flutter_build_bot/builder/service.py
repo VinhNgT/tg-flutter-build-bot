@@ -96,7 +96,9 @@ class BuilderService:
         Raises:
             BuilderError: If cloning or checkout fails.
         """
-        tmp_dir = tempfile.mkdtemp(prefix="tg-build-")
+        work_dir = Path("data/work")
+        work_dir.mkdir(parents=True, exist_ok=True)
+        tmp_dir = tempfile.mkdtemp(prefix="tg-build-", dir=work_dir)
         repo_path = str(Path(tmp_dir) / "repo")
 
         logger.info("Cloning %s into %s", repo_url, repo_path)
