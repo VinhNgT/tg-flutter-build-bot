@@ -17,7 +17,7 @@ from .bot.handlers import (
     start_handler,
     status_handler,
 )
-from .builder.service import BuildService
+from .builder.service import BuilderService
 from .drive.uploader import DriveUploader
 from .store import Store
 
@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 def create_bot(
     token: str,
     store: Store,
-    build_service: BuildService,
+    build_service: BuilderService,
     drive_uploader: DriveUploader,
 ):
     """Create and configure the Telegram bot application."""
@@ -83,7 +83,7 @@ async def main() -> None:
         sys.exit(1)
 
     # Initialize services
-    build_service = BuildService()
+    build_service = BuilderService()
     drive_uploader = DriveUploader()
 
     # Create web app

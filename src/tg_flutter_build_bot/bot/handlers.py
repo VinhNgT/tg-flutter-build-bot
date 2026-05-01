@@ -9,7 +9,7 @@ import time
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from ..builder.service import BuildError, BuildService
+from ..builder.service import BuilderError, BuilderService
 from ..config import extract_project_name, get_effective_drive_folder_name
 from ..drive.uploader import DriveUploader
 from ..store import Store
@@ -41,7 +41,7 @@ async def build_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     store: Store,
-    build_service: BuildService,
+    build_service: BuilderService,
     drive_uploader: DriveUploader,
 ) -> None:
     """Handle /build command — trigger a Flutter build.
@@ -100,7 +100,7 @@ async def build_handler(
         commit_hash = await build_service.resolve_remote_commit(
             config.repo_url, ref
         )
-    except BuildError as e:
+    except BuilderError as e:
         await update.message.reply_text(f"❌ {e}")
         return
 
@@ -319,7 +319,7 @@ async def build_handler(
                     parse_mode="Markdown",
                 )
 
-        except BuildError as e:
+        except BuilderError as e:
             await store.update_build(commit_hash, status="failed")
             await update.message.reply_text(f"❌ Build failed:\n```\n{e}\n```", parse_mode="Markdown")
 
@@ -342,7 +342,7 @@ async def status_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     store: Store,
-    build_service: BuildService,
+    build_service: BuilderService,
 ) -> None:
     """Handle /status command — show current build status."""
     global _last_build_time

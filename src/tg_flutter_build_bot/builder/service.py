@@ -13,11 +13,11 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
-class BuildError(Exception):
+class BuilderError(Exception):
     """Raised when a build step fails."""
 
 
-class BuildService:
+class BuilderService:
     """Handles cloning a Flutter repo, running the build, and locating artifacts.
 
     All subprocess calls are non-blocking (asyncio.create_subprocess_exec).
@@ -63,14 +63,14 @@ class BuildService:
         stdout, stderr = await proc.communicate()
 
         if proc.returncode != 0:
-            raise BuildError(
+            raise BuilderError(
                 f"Failed to resolve ref '{ref}' from {repo_url}: "
                 f"{stderr.decode().strip()}"
             )
 
         output = stdout.decode().strip()
         if not output:
-            raise BuildError(
+            raise BuilderError(
                 f"Branch '{ref}' not found in {repo_url}"
             )
 
@@ -91,7 +91,7 @@ class BuildService:
             (repo_path, full_commit_hash) tuple.
 
         Raises:
-            BuildError: If cloning or checkout fails.
+            BuilderError: If cloning or checkout fails.
         """
         tmp_dir = tempfile.mkdtemp(prefix="tg-build-")
         repo_path = str(Path(tmp_dir) / "repo")
@@ -108,7 +108,7 @@ class BuildService:
 
         if proc.returncode != 0:
             shutil.rmtree(tmp_dir, ignore_errors=True)
-            raise BuildError(
+            raise BuilderError(
                 f"git clone failed: {stderr.decode().strip()}"
             )
 
@@ -152,7 +152,7 @@ class BuildService:
             (stdout, stderr) from the build process.
 
         Raises:
-            BuildError: If the build command fails.
+            BuilderError: If the build command fails.
         """
         parts = shlex.split(build_command)
         logger.info("Running build: %s (in %s)", build_command, repo_path)
@@ -170,7 +170,7 @@ class BuildService:
 
         if proc.returncode != 0:
             logger.error("Build failed:\n%s\n%s", stdout_str, stderr_str)
-            raise BuildError(
+            raise BuilderError(
                 f"Build command failed (exit code {proc.returncode}):\n"
                 f"{stderr_str[-500:]}"  # Last 500 chars of stderr
             )
@@ -191,11 +191,11 @@ class BuildService:
             Absolute path to the artifact file.
 
         Raises:
-            BuildError: If the artifact file doesn't exist.
+            BuilderError: If the artifact file doesn't exist.
         """
         artifact = Path(repo_path) / build_output_path
         if not artifact.exists():
-            raise BuildError(
+            raise BuilderError(
                 f"Build artifact not found at: {artifact}\n"
                 f"Check your build_output_path configuration."
             )
@@ -234,7 +234,7 @@ class BuildService:
         stdout, stderr = await proc.communicate()
 
         if proc.returncode != 0:
-            raise BuildError(
+            raise BuilderError(
                 f"git {' '.join(args)} failed: {stderr.decode().strip()}"
             )
         return stdout.decode().strip()
