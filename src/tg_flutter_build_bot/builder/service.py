@@ -10,6 +10,8 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+from ..config import inject_pat_into_url
+
 logger = logging.getLogger(__name__)
 
 
@@ -43,7 +45,7 @@ class BuilderService:
         return self._lock.locked() is False
 
     async def resolve_remote_commit(
-        self, repo_url: str, ref: str = "main"
+        self, repo_url: str, ref: str = "main", *, gitlab_pat: str = "",
     ) -> str:
         """Resolve a branch name or partial hash to a full commit hash.
 
@@ -55,8 +57,9 @@ class BuilderService:
             return ref.lower()
 
         # Otherwise treat as a branch name
+        auth_url = inject_pat_into_url(repo_url, gitlab_pat)
         proc = await asyncio.create_subprocess_exec(
-            "git", "ls-remote", "--heads", repo_url, ref,
+            "git", "ls-remote", "--heads", auth_url, ref,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -79,7 +82,7 @@ class BuilderService:
         return commit_hash
 
     async def clone_repo(
-        self, repo_url: str, ref: str = "main"
+        self, repo_url: str, ref: str = "main", *, gitlab_pat: str = "",
     ) -> tuple[str, str]:
         """Clone the repo and checkout the specified ref.
 
@@ -98,9 +101,10 @@ class BuilderService:
 
         logger.info("Cloning %s into %s", repo_url, repo_path)
 
-        # Clone
+        # Clone (inject PAT for authenticated access if configured)
+        auth_url = inject_pat_into_url(repo_url, gitlab_pat)
         proc = await asyncio.create_subprocess_exec(
-            "git", "clone", "--depth", "50", repo_url, repo_path,
+            "git", "clone", "--depth", "50", auth_url, repo_path,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )

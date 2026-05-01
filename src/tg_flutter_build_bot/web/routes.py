@@ -80,6 +80,7 @@ def create_routes(
         for key in (
             "telegram_token",
             "repo_url",
+            "gitlab_pat",
             "build_command",
             "build_output_path",
             "drive_folder_name",

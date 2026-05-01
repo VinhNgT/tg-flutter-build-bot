@@ -21,6 +21,7 @@ class BotConfig(BaseModel):
     max_builds: int = 3
     drive_folder_name: str = ""  # If empty, defaults to "{projectName}-tg-flutter-build-bot"
     web_port: int = 8080
+    gitlab_pat: str = ""  # Optional GitLab Personal Access Token for private repos
 
 
 class OAuthConfig(BaseModel):
@@ -58,6 +59,7 @@ ENV_MAP: dict[str, str] = {
     "max_builds": "MAX_BUILDS",
     "drive_folder_name": "DRIVE_FOLDER_NAME",
     "web_port": "WEB_PORT",
+    "gitlab_pat": "GITLAB_PAT",
 }
 
 OAUTH_ENV_MAP: dict[str, str] = {
@@ -112,6 +114,30 @@ def get_effective_drive_folder_name(
         return drive_folder_name
     project_name = extract_project_name(repo_url)
     return f"{project_name}-tg-flutter-build-bot"
+
+
+def inject_pat_into_url(repo_url: str, pat: str) -> str:
+    """Inject a GitLab PAT into an HTTP(S) repo URL for authenticated cloning.
+
+    Transforms:
+        https://gitlab.com/user/repo.git
+        → https://oauth2:<pat>@gitlab.com/user/repo.git
+
+    Returns the URL unchanged if it's not HTTP(S) or if PAT is empty.
+    """
+    if not pat or not repo_url:
+        return repo_url
+
+    parsed = urlparse(repo_url)
+    if parsed.scheme not in ("http", "https"):
+        return repo_url
+
+    # Replace or set the userinfo
+    netloc = f"oauth2:{pat}@{parsed.hostname}"
+    if parsed.port:
+        netloc += f":{parsed.port}"
+
+    return parsed._replace(netloc=netloc).geturl()
 
 
 # ---------------------------------------------------------------------------

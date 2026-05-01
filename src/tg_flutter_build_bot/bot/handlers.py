@@ -98,7 +98,7 @@ async def build_handler(
 
     try:
         commit_hash = await build_service.resolve_remote_commit(
-            config.repo_url, ref
+            config.repo_url, ref, gitlab_pat=config.gitlab_pat,
         )
     except BuilderError as e:
         await update.message.reply_text(f"❌ {e}")
@@ -205,7 +205,7 @@ async def build_handler(
                 parse_mode="Markdown",
             )
             repo_path, resolved_hash = await build_service.clone_repo(
-                config.repo_url, ref
+                config.repo_url, ref, gitlab_pat=config.gitlab_pat,
             )
 
             # Update commit hash if it was resolved from a branch

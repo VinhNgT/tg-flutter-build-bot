@@ -42,6 +42,17 @@
 
         <div class="form-group">
             <label>
+                GitLab PAT
+                <span class="badge badge-{{ sources.gitlab_pat }}">{{ sources.gitlab_pat }}</span>
+            </label>
+            <input type="password" name="gitlab_pat"
+                   value="{{ config.gitlab_pat }}"
+                   placeholder="glpat-xxxxxxxxxxxxxxxxxxxx">
+            <div class="hint">Optional. Personal Access Token for private GitLab repos (read_repository scope)</div>
+        </div>
+
+        <div class="form-group">
+            <label>
                 Build Command
                 <span class="badge badge-{{ sources.build_command }}">{{ sources.build_command }}</span>
             </label>
