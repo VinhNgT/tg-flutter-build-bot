@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Flutter Build Bot{% endblock %}</title>
+    <style>
+        :root {
+            --bg: #0f1117;
+            --surface: #1a1d27;
+            --surface-hover: #22263a;
+            --border: #2a2e3f;
+            --text: #e4e6f0;
+            --text-muted: #8b8fa3;
+            --accent: #6c5ce7;
+            --accent-hover: #7f6ef0;
+            --success: #00b894;
+            --warning: #fdcb6e;
+            --danger: #e17055;
+            --info: #74b9ff;
+            --radius: 10px;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+
+        .layout {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* Sidebar */
+        nav {
+            width: 220px;
+            background: var(--surface);
+            border-right: 1px solid var(--border);
+            padding: 24px 0;
+            position: fixed;
+            height: 100vh;
+            overflow-y: auto;
+        }
+
+        nav .logo {
+            padding: 0 20px 24px;
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--accent);
+            letter-spacing: -0.3px;
+        }
+
+        nav .logo span {
+            color: var(--text-muted);
+            font-weight: 400;
+            font-size: 12px;
+            display: block;
+            margin-top: 2px;
+        }
+
+        nav a {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 20px;
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 14px;
+            transition: all 0.15s ease;
+            border-left: 3px solid transparent;
+        }
+
+        nav a:hover, nav a.active {
+            color: var(--text);
+            background: var(--surface-hover);
+            border-left-color: var(--accent);
+        }
+
+        nav a .icon { font-size: 16px; width: 20px; text-align: center; }
+
+        /* Main content */
+        main {
+            flex: 1;
+            margin-left: 220px;
+            padding: 32px 40px;
+            max-width: 900px;
+        }
+
+        h1 {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 24px;
+            letter-spacing: -0.5px;
+        }
+
+        /* Cards */
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+            margin-bottom: 16px;
+        }
+
+        .card h2 {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 16px;
+        }
+
+        /* Status grid */
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+        }
+
+        .status-item {
+            background: var(--bg);
+            border-radius: 8px;
+            padding: 14px;
+        }
+
+        .status-item .label {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+
+        .status-item .value {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        /* Forms */
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-group label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 6px;
+            color: var(--text);
+        }
+
+        .form-group input, .form-group textarea {
+            width: 100%;
+            padding: 10px 12px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            font-size: 14px;
+            font-family: inherit;
+            transition: border-color 0.15s ease;
+        }
+
+        .form-group input:focus, .form-group textarea:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .form-group .hint {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        /* Badges */
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .badge-saved { background: rgba(108,92,231,0.2); color: var(--accent); }
+        .badge-env { background: rgba(116,185,255,0.2); color: var(--info); }
+        .badge-dotenv { background: rgba(253,203,110,0.2); color: var(--warning); }
+        .badge-default { background: rgba(139,143,163,0.15); color: var(--text-muted); }
+        .badge-success { background: rgba(0,184,148,0.2); color: var(--success); }
+        .badge-building { background: rgba(253,203,110,0.2); color: var(--warning); }
+        .badge-failed { background: rgba(225,112,85,0.2); color: var(--danger); }
+
+        /* Buttons */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            border: none;
+            transition: all 0.15s ease;
+            text-decoration: none;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--accent-hover);
+        }
+
+        .btn-danger {
+            background: rgba(225,112,85,0.15);
+            color: var(--danger);
+        }
+
+        .btn-danger:hover {
+            background: rgba(225,112,85,0.25);
+        }
+
+        .btn-outline {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text);
+        }
+
+        .btn-outline:hover {
+            background: var(--surface-hover);
+        }
+
+        .btn-google {
+            background: #fff;
+            color: #444;
+            font-weight: 500;
+            padding: 10px 24px;
+        }
+
+        .btn-google:hover {
+            background: #f5f5f5;
+        }
+
+        .btn-google img {
+            width: 18px;
+            height: 18px;
+        }
+
+        /* Table */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th {
+            text-align: left;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        td {
+            padding: 12px;
+            font-size: 14px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        tr:last-child td { border-bottom: none; }
+
+        td a {
+            color: var(--info);
+            text-decoration: none;
+        }
+
+        td a:hover { text-decoration: underline; }
+
+        code {
+            background: var(--bg);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 13px;
+            font-family: 'SF Mono', 'Fira Code', monospace;
+        }
+
+        /* Alert banners */
+        .alert {
+            padding: 12px 16px;
+            border-radius: 6px;
+            margin-bottom: 16px;
+            font-size: 14px;
+        }
+
+        .alert-success {
+            background: rgba(0,184,148,0.1);
+            border: 1px solid rgba(0,184,148,0.3);
+            color: var(--success);
+        }
+
+        .alert-warning {
+            background: rgba(253,203,110,0.1);
+            border: 1px solid rgba(253,203,110,0.3);
+            color: var(--warning);
+        }
+
+        .alert-danger {
+            background: rgba(225,112,85,0.1);
+            border: 1px solid rgba(225,112,85,0.3);
+            color: var(--danger);
+        }
+    </style>
+</head>
+<body>
+    <div class="layout">
+        <nav>
+            <div class="logo">
+                🤖 Build Bot
+                <span>Flutter APK Builder</span>
+            </div>
+            <a href="/" class="{% if active_page == 'dashboard' %}active{% endif %}">
+                <span class="icon">📊</span> Dashboard
+            </a>
+            <a href="/config" class="{% if active_page == 'config' %}active{% endif %}">
+                <span class="icon">⚙️</span> Configuration
+            </a>
+            <a href="/oauth" class="{% if active_page == 'oauth' %}active{% endif %}">
+                <span class="icon">☁️</span> Google Drive
+            </a>
+            <a href="/builds" class="{% if active_page == 'builds' %}active{% endif %}">
+                <span class="icon">📦</span> Build History
+            </a>
+        </nav>
+
+        <main>
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+</body>
+</html>

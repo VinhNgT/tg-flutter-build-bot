@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% set active_page = "dashboard" %}
+
+{% block title %}Dashboard — Flutter Build Bot{% endblock %}
+
+{% block content %}
+<h1>Dashboard</h1>
+
+<div class="card">
+    <h2>Status</h2>
+    <div class="status-grid">
+        <div class="status-item">
+            <div class="label">Bot Status</div>
+            <div class="value" style="color: var(--success);">● Running</div>
+        </div>
+        <div class="status-item">
+            <div class="label">Google Drive</div>
+            <div class="value" style="color: {% if oauth_connected %}var(--success){% else %}var(--danger){% endif %};">
+                {% if oauth_connected %}● Connected{% else %}● Not Connected{% endif %}
+            </div>
+        </div>
+        <div class="status-item">
+            <div class="label">Drive Folder</div>
+            <div class="value" style="font-size: 14px;">{{ drive_folder }}</div>
+        </div>
+        <div class="status-item">
+            <div class="label">Total Builds</div>
+            <div class="value">{{ builds | length }}</div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Configuration</h2>
+    <div class="status-grid">
+        <div class="status-item">
+            <div class="label">Repository</div>
+            <div class="value" style="font-size: 13px; word-break: break-all;">
+                {{ config.repo_url or "Not configured" }}
+            </div>
+        </div>
+        <div class="status-item">
+            <div class="label">Build Command</div>
+            <div class="value" style="font-size: 13px;">
+                <code>{{ config.build_command }}</code>
+            </div>
+        </div>
+        <div class="status-item">
+            <div class="label">Cooldown</div>
+            <div class="value">{{ config.cooldown_seconds }}s</div>
+        </div>
+        <div class="status-item">
+            <div class="label">Max Builds</div>
+            <div class="value">{{ config.max_builds }}</div>
+        </div>
+    </div>
+</div>
+
+{% if builds %}
+<div class="card">
+    <h2>Recent Builds</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Status</th>
+                <th>Commit</th>
+                <th>File</th>
+                <th>Time</th>
+                <th>Link</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for build in builds %}
+            <tr>
+                <td><span class="badge badge-{{ build.status }}">{{ build.status }}</span></td>
+                <td><code title="{{ build.commit_hash }}">{{ build.short_hash }}</code></td>
+                <td style="font-size: 13px;">{{ build.filename }}</td>
+                <td style="font-size: 13px;">{{ build.timestamp[:16] }}</td>
+                <td>
+                    {% if build.drive_link %}
+                    <a href="{{ build.drive_link }}" target="_blank">Download ↗</a>
+                    {% else %}
+                    <span style="color: var(--text-muted);">Local only</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% set active_page = "config" %}
+
+{% block title %}Configuration — Flutter Build Bot{% endblock %}
+
+{% block content %}
+<h1>Configuration</h1>
+
+{% if request.query_params.get('saved') %}
+<div class="alert alert-success">✅ Configuration saved successfully.</div>
+{% endif %}
+
+<form method="post" action="/config">
+    <div class="card">
+        <h2>Bot Settings</h2>
+
+        <div class="form-group">
+            <label>
+                Telegram Bot Token
+                <span class="badge badge-{{ sources.telegram_token }}">{{ sources.telegram_token }}</span>
+            </label>
+            <input type="password" name="telegram_token"
+                   value="{{ config.telegram_token }}"
+                   placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11">
+            <div class="hint">Get from @BotFather on Telegram</div>
+        </div>
+
+        <div class="form-group">
+            <label>
+                Repository URL
+                <span class="badge badge-{{ sources.repo_url }}">{{ sources.repo_url }}</span>
+            </label>
+            <input type="text" name="repo_url"
+                   value="{{ config.repo_url }}"
+                   placeholder="https://github.com/user/flutter-app.git">
+            <div class="hint">Git clone URL for the Flutter project</div>
+        </div>
+
+        <div class="form-group">
+            <label>
+                Build Command
+                <span class="badge badge-{{ sources.build_command }}">{{ sources.build_command }}</span>
+            </label>
+            <input type="text" name="build_command"
+                   value="{{ config.build_command }}"
+                   placeholder="flutter build apk --release">
+        </div>
+
+        <div class="form-group">
+            <label>
+                Build Output Path
+                <span class="badge badge-{{ sources.build_output_path }}">{{ sources.build_output_path }}</span>
+            </label>
+            <input type="text" name="build_output_path"
+                   value="{{ config.build_output_path }}"
+                   placeholder="build/app/outputs/flutter-apk/app-release.apk">
+            <div class="hint">Relative to repo root</div>
+        </div>
+
+        <div class="form-group">
+            <label>
+                Allowed Chat IDs
+                <span class="badge badge-{{ sources.allowed_chat_ids }}">{{ sources.allowed_chat_ids }}</span>
+            </label>
+            <input type="text" name="allowed_chat_ids"
+                   value="{{ config.allowed_chat_ids | join(', ') }}"
+                   placeholder="-1001234567890, -1009876543210">
+            <div class="hint">Comma-separated Telegram chat IDs. Leave empty to allow all chats.</div>
+        </div>
+
+        <div class="form-group">
+            <label>
+                Cooldown (seconds)
+                <span class="badge badge-{{ sources.cooldown_seconds }}">{{ sources.cooldown_seconds }}</span>
+            </label>
+            <input type="number" name="cooldown_seconds"
+                   value="{{ config.cooldown_seconds }}"
+                   min="0" max="3600">
+        </div>
+
+        <div class="form-group">
+            <label>
+                Max Builds to Keep
+                <span class="badge badge-{{ sources.max_builds }}">{{ sources.max_builds }}</span>
+            </label>
+            <input type="number" name="max_builds"
+                   value="{{ config.max_builds }}"
+                   min="1" max="20">
+        </div>
+
+        <div class="form-group">
+            <label>
+                Drive Folder Name
+                <span class="badge badge-{{ sources.drive_folder_name }}">{{ sources.drive_folder_name }}</span>
+            </label>
+            <input type="text" name="drive_folder_name"
+                   value="{{ config.drive_folder_name }}"
+                   placeholder="Auto: {project-name}-tg-flutter-build-bot">
+            <div class="hint">Leave empty for auto-generated name based on repo URL</div>
+        </div>
+
+        <div class="form-group">
+            <label>
+                Web UI Port
+                <span class="badge badge-{{ sources.web_port }}">{{ sources.web_port }}</span>
+            </label>
+            <input type="number" name="web_port"
+                   value="{{ config.web_port }}"
+                   min="1024" max="65535">
+            <div class="hint">Requires restart to take effect</div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Google OAuth Credentials</h2>
+
+        <div class="form-group">
+            <label>Client ID</label>
+            <input type="text" name="client_id"
+                   value="{{ oauth.client_id }}"
+                   placeholder="xxxx.apps.googleusercontent.com">
+        </div>
+
+        <div class="form-group">
+            <label>Client Secret</label>
+            <input type="password" name="client_secret"
+                   value="{{ oauth.client_secret }}"
+                   placeholder="GOCSPX-xxxxxxxx">
+            <div class="hint">
+                Get these from
+                <a href="https://console.cloud.google.com/apis/credentials" target="_blank"
+                   style="color: var(--info);">Google Cloud Console</a>.
+                Set redirect URI to <code>http://localhost:{{ config.web_port }}/oauth/callback</code>
+            </div>
+        </div>
+    </div>
+
+    <button type="submit" class="btn btn-primary">💾 Save Configuration</button>
+</form>
+{% endblock %}
