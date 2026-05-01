@@ -32,7 +32,7 @@ async def start_handler(
         "▸ `/build <branch>` — Build latest commit on a branch\n"
         "▸ `/build <hash>` — Build a specific commit\n"
         "▸ `/status` — Current build status\n"
-        "▸ `/builds` — Recent build history",
+        "▸ `/recent` — Recent build history",
         parse_mode="Markdown",
     )
 
@@ -390,12 +390,12 @@ async def status_handler(
     )
 
 
-async def builds_handler(
+async def recent_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     store: Store,
 ) -> None:
-    """Handle /builds command — list recent builds."""
+    """Handle /recent command — list recent builds."""
     builds = store.get_builds()
 
     if not builds:

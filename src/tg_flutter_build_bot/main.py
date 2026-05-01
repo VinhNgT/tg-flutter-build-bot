@@ -13,7 +13,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler
 from .bot.filters import ChatWhitelistFilter
 from .bot.handlers import (
     build_handler,
-    builds_handler,
+    recent_handler,
     start_handler,
     status_handler,
 )
@@ -58,11 +58,11 @@ def create_bot(
 
     app.add_handler(CommandHandler("status", _status, filters=whitelist))
 
-    # /builds
-    async def _builds(update, context):
-        await builds_handler(update, context, store)
+    # /recent
+    async def _recent(update, context):
+        await recent_handler(update, context, store)
 
-    app.add_handler(CommandHandler("builds", _builds, filters=whitelist))
+    app.add_handler(CommandHandler("recent", _recent, filters=whitelist))
 
     return app
 
