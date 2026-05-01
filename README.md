@@ -89,7 +89,7 @@ The bot uses chat IDs to restrict who can trigger builds.
 
 ### 3. Google Cloud OAuth2 Credentials (for Drive Upload)
 
-This step is **optional** — the bot can build APKs without Drive. But without it, there's no download link.
+This step is **required**. Telegram limits bot file uploads to 50MB, which is often too small for Flutter release APKs. The bot uploads the built artifacts to Google Drive and provides you with a shareable download link.
 
 #### a. Create a Google Cloud Project
 

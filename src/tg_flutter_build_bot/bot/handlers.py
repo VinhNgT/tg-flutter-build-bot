@@ -63,6 +63,15 @@ async def build_handler(
         )
         return
 
+    oauth = store.get_oauth_config()
+    if not oauth.refresh_token:
+        await update.message.reply_text(
+            "❌ Google Drive is not connected.\n"
+            "Telegram limits bot file uploads to 50MB, which is often too small for Flutter APKs. "
+            "Please connect Google Drive via the Web UI before building."
+        )
+        return
+
     # Parse the optional ref argument
     ref = "main"
     if context.args:
@@ -258,33 +267,25 @@ async def build_handler(
             store.copy_artifact_to_builds(artifact_path, filename)
 
             # Upload to Drive
+            # (We verified OAuth is connected at the start of the handler)
             oauth = store.get_oauth_config()
             drive_link = ""
             drive_file_id = ""
 
-            if oauth.refresh_token:
-                await update.message.reply_text("☁️ Uploading to Google Drive...")
-                try:
-                    folder_name = get_effective_drive_folder_name(
-                        config.drive_folder_name, config.repo_url
-                    )
-                    folder_id = await drive_uploader.ensure_folder(
-                        oauth, folder_name
-                    )
-                    drive_file_id, drive_link = await drive_uploader.upload_file(
-                        artifact_path, filename, oauth, folder_id
-                    )
-                except Exception as e:
-                    logger.error("Drive upload failed: %s", e)
-                    await update.message.reply_text(
-                        f"⚠️ Drive upload failed: {e}\n"
-                        f"APK is saved locally."
-                    )
-            else:
-                await update.message.reply_text(
-                    "⚠️ Google Drive not connected. "
-                    "APK saved locally only. Connect via Web UI."
+            await update.message.reply_text("☁️ Uploading to Google Drive...")
+            try:
+                folder_name = get_effective_drive_folder_name(
+                    config.drive_folder_name, config.repo_url
                 )
+                folder_id = await drive_uploader.ensure_folder(
+                    oauth, folder_name
+                )
+                drive_file_id, drive_link = await drive_uploader.upload_file(
+                    artifact_path, filename, oauth, folder_id
+                )
+            except Exception as e:
+                logger.error("Drive upload failed: %s", e)
+                raise BuilderError(f"Drive upload failed: {e}")
 
             # Update build record
             await store.update_build(
@@ -304,20 +305,12 @@ async def build_handler(
             )
 
             # Success reply
-            if drive_link:
-                await update.message.reply_text(
-                    f"✅ Build successful!\n\n"
-                    f"📦 `{filename}`\n"
-                    f"🔗 [Download APK]({drive_link})",
-                    parse_mode="Markdown",
-                )
-            else:
-                await update.message.reply_text(
-                    f"✅ Build successful!\n\n"
-                    f"📦 `{filename}`\n"
-                    f"(Saved locally — connect Google Drive via Web UI to get download links)",
-                    parse_mode="Markdown",
-                )
+            await update.message.reply_text(
+                f"✅ Build successful!\n\n"
+                f"📦 `{filename}`\n"
+                f"🔗 [Download APK]({drive_link})",
+                parse_mode="Markdown",
+            )
 
         except BuilderError as e:
             await store.update_build(commit_hash, status="failed")
