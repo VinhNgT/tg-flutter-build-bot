@@ -35,6 +35,7 @@ class DriveUploader:
 
     def __init__(self) -> None:
         self._folder_id_cache: dict[str, str] = {}  # folder_name -> folder_id
+        self._pending_flow: Flow | None = None  # Kept alive for PKCE
 
     def get_auth_url(
         self,
@@ -60,6 +61,9 @@ class DriveUploader:
             include_granted_scopes="true",
             prompt="consent",
         )
+        # Keep the flow alive — it holds the PKCE code_verifier needed
+        # by exchange_code() to complete the token exchange.
+        self._pending_flow = flow
         return auth_url
 
     def exchange_code(
@@ -70,18 +74,13 @@ class DriveUploader:
         redirect_uri: str,
     ) -> OAuthConfig:
         """Exchange an authorization code for OAuth tokens."""
-        flow = Flow.from_client_config(
-            {
-                "web": {
-                    "client_id": client_id,
-                    "client_secret": client_secret,
-                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                    "token_uri": "https://oauth2.googleapis.com/token",
-                }
-            },
-            scopes=SCOPES,
-            redirect_uri=redirect_uri,
-        )
+        flow = self._pending_flow
+        if flow is None:
+            raise DriveError(
+                "No pending OAuth flow — please start the login again."
+            )
+        self._pending_flow = None
+
         flow.fetch_token(code=code)
         creds = flow.credentials
 
