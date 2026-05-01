@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import signal
 
 import uvicorn
 from dotenv import load_dotenv
@@ -48,6 +49,19 @@ async def main() -> None:
         log_level="info",
     )
     server = uvicorn.Server(uvi_config)
+
+    # Disable Uvicorn's built-in signal handling — we manage shutdown
+    # ourselves so the bot can stop before connections are torn down.
+    server.install_signal_handlers = lambda: None
+
+    loop = asyncio.get_running_loop()
+
+    def _request_shutdown():
+        logger.info("Shutdown signal received...")
+        server.should_exit = True
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, _request_shutdown)
 
     # Attempt to start the Telegram bot (non-fatal if token missing)
     await bot_manager.start_bot()
