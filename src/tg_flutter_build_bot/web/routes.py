@@ -9,7 +9,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from ..build.service import BuildService
+from ..builder.service import BuildService
 from ..config import get_effective_drive_folder_name
 from ..drive.uploader import DriveUploader
 from ..store import Store

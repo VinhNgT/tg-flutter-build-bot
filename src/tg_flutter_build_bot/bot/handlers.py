@@ -9,7 +9,7 @@ import time
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from ..build.service import BuildError, BuildService
+from ..builder.service import BuildError, BuildService
 from ..config import extract_project_name, get_effective_drive_folder_name
 from ..drive.uploader import DriveUploader
 from ..store import Store

@@ -18,7 +18,7 @@ from .bot.handlers import (
     start_handler,
     status_handler,
 )
-from .build.service import BuildService
+from .builder.service import BuildService
 from .drive.uploader import DriveUploader
 from .store import Store
 
