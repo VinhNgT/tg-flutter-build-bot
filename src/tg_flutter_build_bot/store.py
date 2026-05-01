@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import shutil
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 from .config import (
@@ -219,7 +220,9 @@ class Store:
             return None
 
     async def prune_builds(
-        self, max_builds: int, drive_delete_fn: object = None
+        self,
+        max_builds: int,
+        drive_delete_fn: Callable[[str], Awaitable[None]] | None = None,
     ) -> list[BuildRecord]:
         """Enforce the max build limit.
 
@@ -250,9 +253,7 @@ class Store:
                 if record.drive_file_id:
                     try:
                         await drive_delete_fn(record.drive_file_id)
-                        logger.info(
-                            "Pruned Drive file: %s", record.drive_file_id
-                        )
+                        logger.info("Pruned Drive file: %s", record.drive_file_id)
                     except Exception:
                         logger.warning(
                             "Failed to delete Drive file: %s",
@@ -261,9 +262,7 @@ class Store:
 
         return pruned
 
-    def copy_artifact_to_builds(
-        self, source_path: str, filename: str
-    ) -> Path:
+    def copy_artifact_to_builds(self, source_path: str, filename: str) -> Path:
         """Copy a built APK to the local builds directory.
 
         Returns the destination path.
