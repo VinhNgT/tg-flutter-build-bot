@@ -1,413 +1,277 @@
-"""Telegram command handlers for the build bot."""
+"""Telegram command handlers — thin trigger layer for Jenkins builds."""
 
 from __future__ import annotations
 
-import asyncio
 import logging
-import time
+from datetime import datetime, timezone
 
 from telegram import Update
-from telegram.ext import ContextTypes
+from telegram.ext import ContextTypes, ConversationHandler
 
-from ..builder.service import BuilderError, BuilderService
-from ..config import extract_project_name, get_effective_drive_folder_name
-from ..drive.uploader import DriveUploader
-from ..store import Store
+from .context import BotContext
 
 logger = logging.getLogger(__name__)
 
-# Global build state
-_build_lock = asyncio.Lock()
-_last_build_time: float = 0.0
+# ConversationHandler states for /connect_drive
+AWAITING_CODE = 0
+
+
+def _get_ctx(context: ContextTypes.DEFAULT_TYPE) -> BotContext:
+    """Retrieve the shared BotContext from bot_data."""
+    return context.bot_data["bot_context"]
+
+
+# ------------------------------------------------------------------
+# /start
+# ------------------------------------------------------------------
 
 
 async def start_handler(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
     """Handle /start command — welcome message."""
+    assert update.message
     await update.message.reply_text(
         "🤖 *Flutter Build Bot*\n\n"
         "Available commands:\n"
         "▸ `/build` — Build latest commit on main\n"
-        "▸ `/build <branch>` — Build latest commit on a branch\n"
+        "▸ `/build <branch>` — Build latest on a branch\n"
         "▸ `/build <hash>` — Build a specific commit\n"
         "▸ `/status` — Current build status\n"
-        "▸ `/recent` — Recent build history",
+        "▸ `/recent` — Recent build history\n"
+        "▸ `/connect_drive` — Connect Google Drive",
         parse_mode="Markdown",
     )
 
 
+# ------------------------------------------------------------------
+# /build
+# ------------------------------------------------------------------
+
+
 async def build_handler(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    store: Store,
-    build_service: BuilderService,
-    drive_uploader: DriveUploader,
+    update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Handle /build command — trigger a Flutter build.
+    """Trigger a Jenkins build and track for notification."""
+    assert update.message
+    assert update.effective_chat
+    ctx = _get_ctx(context)
+    config = ctx.config
+    chat_id = update.effective_chat.id
 
-    Flow:
-    1. Check build lock → reject if busy
-    2. Check cooldown → reply with remaining time
-    3. Resolve commit → check cache → return existing link
-    4. Clone → build → upload → reply with link
-    """
-    global _last_build_time
-
-    config = store.get_effective_config()
-
-    if not config.repo_url:
-        await update.message.reply_text(
-            "❌ No repository URL configured. "
-            "Set it via the Web UI or REPO_URL env var."
-        )
+    # Check allowed chats
+    if chat_id not in config.allowed_chat_ids:
+        await update.message.reply_text("❌ Unauthorized.")
         return
 
-    oauth = store.get_oauth_config()
-    if not oauth.refresh_token:
+    ref = context.args[0] if context.args else "main"
+
+    # Check Drive connection
+    if not ctx.drive.is_connected():
         await update.message.reply_text(
             "❌ Google Drive is not connected.\n"
-            "Telegram limits bot file uploads to 50MB, which is often too small for Flutter APKs. "
-            "Please connect Google Drive via the Web UI before building."
+            "Use /connect\\_drive to set up uploads first."
         )
         return
 
-    # Parse the optional ref argument
-    ref = "main"
-    if context.args:
-        ref = context.args[0]
-
-    # 1. Check build lock
-    if _build_lock.locked():
-        current = build_service.current_build
-        short = current[:7] if current else "unknown"
-        await update.message.reply_text(
-            f"🚧 A build is already in progress (commit `{short}`). "
-            f"Please wait.",
-            parse_mode="Markdown",
-        )
-        return
-
-    # 2. Check cooldown
-    elapsed = time.time() - _last_build_time
-    remaining = config.cooldown_seconds - elapsed
-    if remaining > 0 and _last_build_time > 0:
-        mins = int(remaining // 60)
-        secs = int(remaining % 60)
-        await update.message.reply_text(
-            f"⏳ Cooldown active. Next build available in "
-            f"{mins}m {secs}s."
-        )
-        return
-
-    # 3. Resolve the target commit
-    await update.message.reply_text(
-        f"🔍 Resolving `{ref}`...", parse_mode="Markdown"
+    # Trigger Jenkins build
+    queue_id = await ctx.jenkins.trigger_build(
+        branch=ref,
+        callback_url=config.bot_callback_url,
     )
 
-    try:
-        commit_hash = await build_service.resolve_remote_commit(
-            config.repo_url, ref, gitlab_pat=config.gitlab_pat,
-        )
-    except BuilderError as e:
-        await update.message.reply_text(f"❌ {e}")
-        return
-
-    # 4. Check build cache
-    existing = store.find_build_by_commit(commit_hash)
-    if existing and existing.status == "success":
-        # Verify Drive link is still valid
-        oauth = store.get_oauth_config()
-        if existing.drive_file_id and oauth.refresh_token:
-            still_exists = await drive_uploader.check_file_exists(
-                existing.drive_file_id, oauth
-            )
-            if still_exists:
-                short = existing.short_hash
-                await update.message.reply_text(
-                    f"✅ This commit was already built!\n\n"
-                    f"📦 `{existing.filename}`\n"
-                    f"🔗 [Download APK]({existing.drive_link})",
-                    parse_mode="Markdown",
-                )
-                return
-            else:
-                # Drive file deleted — try re-upload from local copy
-                local_path = store.get_local_artifact_path(existing.filename)
-                if local_path:
-                    await update.message.reply_text(
-                        "♻️ Drive file was deleted. Re-uploading from local copy..."
-                    )
-                    try:
-                        folder_name = get_effective_drive_folder_name(
-                            config.drive_folder_name, config.repo_url
-                        )
-                        folder_id = await drive_uploader.ensure_folder(
-                            oauth, folder_name
-                        )
-                        file_id, link = await drive_uploader.upload_file(
-                            str(local_path),
-                            existing.filename,
-                            oauth,
-                            folder_id,
-                        )
-                        await store.update_build(
-                            commit_hash,
-                            drive_file_id=file_id,
-                            drive_link=link,
-                        )
-                        await update.message.reply_text(
-                            f"✅ Re-uploaded successfully!\n\n"
-                            f"📦 `{existing.filename}`\n"
-                            f"🔗 [Download APK]({link})",
-                            parse_mode="Markdown",
-                        )
-                        return
-                    except Exception as e:
-                        logger.warning("Re-upload failed: %s", e)
-                        # Fall through to rebuild
-
-        elif existing.drive_link:
-            # No OAuth to verify, just return the link
-            await update.message.reply_text(
-                f"✅ This commit was already built!\n\n"
-                f"📦 `{existing.filename}`\n"
-                f"🔗 [Download APK]({existing.drive_link})",
-                parse_mode="Markdown",
-            )
-            return
-
-    if existing and existing.status == "building":
+    if queue_id is None:
         await update.message.reply_text(
-            "🔨 This commit is currently being built..."
+            "❌ Failed to trigger Jenkins build.\n"
+            "Check bot logs for details."
         )
         return
 
-    # 5. Acquire lock and build
-    async with _build_lock:
-        build_service._current_build = commit_hash
-        repo_path: str | None = None
+    ctx.add_pending(queue_id, chat_id, ref)
 
-        try:
-            project_name = extract_project_name(config.repo_url)
-            short_hash = commit_hash[:7]
+    await update.message.reply_text(
+        f"🚀 Build triggered for `{ref}`\n"
+        f"⏳ You'll be notified when it completes.",
+        parse_mode="Markdown",
+    )
 
-            # Create initial build record
-            from ..config import BuildRecord
-            from datetime import datetime, timezone
 
-            filename = build_service.generate_artifact_name(
-                project_name, commit_hash
-            )
-            record = BuildRecord(
-                commit_hash=commit_hash,
-                short_hash=short_hash,
-                filename=filename,
-                timestamp=datetime.now(timezone.utc).isoformat(),
-                status="building",
-            )
-            await store.add_build(record)
-
-            # Clone
-            await update.message.reply_text(
-                f"📥 Cloning repository (ref: `{ref}`)...",
-                parse_mode="Markdown",
-            )
-            repo_path, resolved_hash = await build_service.clone_repo(
-                config.repo_url, ref, gitlab_pat=config.gitlab_pat,
-            )
-
-            # Update commit hash if it was resolved from a branch
-            if resolved_hash != commit_hash:
-                # Remove the placeholder record and re-check cache
-                await store.delete_build(commit_hash)
-                commit_hash = resolved_hash
-                short_hash = commit_hash[:7]
-
-                # Check if this resolved hash already exists
-                existing = store.find_build_by_commit(commit_hash)
-                if existing and existing.status == "success":
-                    build_service.cleanup(repo_path)
-                    await update.message.reply_text(
-                        f"✅ Latest commit already built!\n\n"
-                        f"📦 `{existing.filename}`\n"
-                        f"🔗 [Download APK]({existing.drive_link})",
-                        parse_mode="Markdown",
-                    )
-                    return
-
-                filename = build_service.generate_artifact_name(
-                    project_name, commit_hash
-                )
-                record = BuildRecord(
-                    commit_hash=commit_hash,
-                    short_hash=short_hash,
-                    filename=filename,
-                    timestamp=datetime.now(timezone.utc).isoformat(),
-                    status="building",
-                )
-                await store.add_build(record)
-
-            build_service._current_build = commit_hash
-
-            # Build
-            await update.message.reply_text(
-                f"🔨 Building `{short_hash}`...\n"
-                f"Command: `{config.build_command}`",
-                parse_mode="Markdown",
-            )
-            await build_service.run_build(repo_path, config.build_command)
-
-            # Locate artifact
-            artifact_path = build_service.get_artifact_path(
-                repo_path, config.build_output_path
-            )
-
-            # Copy to local builds directory
-            store.copy_artifact_to_builds(artifact_path, filename)
-
-            # Upload to Drive
-            # (We verified OAuth is connected at the start of the handler)
-            oauth = store.get_oauth_config()
-            drive_link = ""
-            drive_file_id = ""
-
-            await update.message.reply_text("☁️ Uploading to Google Drive...")
-            try:
-                folder_name = get_effective_drive_folder_name(
-                    config.drive_folder_name, config.repo_url
-                )
-                folder_id = await drive_uploader.ensure_folder(
-                    oauth, folder_name
-                )
-                drive_file_id, drive_link = await drive_uploader.upload_file(
-                    artifact_path, filename, oauth, folder_id
-                )
-            except Exception as e:
-                logger.error("Drive upload failed: %s", e)
-                raise BuilderError(f"Drive upload failed: {e}")
-
-            # Update build record
-            await store.update_build(
-                commit_hash,
-                status="success",
-                drive_file_id=drive_file_id,
-                drive_link=drive_link,
-            )
-
-            # Prune old builds
-            async def _drive_delete(fid: str) -> None:
-                await drive_uploader.delete_file(fid, oauth)
-
-            await store.prune_builds(
-                config.max_builds,
-                drive_delete_fn=_drive_delete if oauth.refresh_token else None,
-            )
-
-            # Success reply
-            await update.message.reply_text(
-                f"✅ Build successful!\n\n"
-                f"📦 `{filename}`\n"
-                f"🔗 [Download APK]({drive_link})",
-                parse_mode="Markdown",
-            )
-
-        except BuilderError as e:
-            await store.update_build(commit_hash, status="failed")
-            await update.message.reply_text(f"❌ Build failed:\n```\n{e}\n```", parse_mode="Markdown")
-
-        except Exception as e:
-            logger.exception("Unexpected error during build")
-            await store.update_build(commit_hash, status="failed")
-            await update.message.reply_text(
-                f"❌ Unexpected error: {e}"
-            )
-
-        finally:
-            # Cleanup
-            if repo_path:
-                build_service.cleanup(repo_path)
-            build_service._current_build = None
-            _last_build_time = time.time()
+# ------------------------------------------------------------------
+# /status
+# ------------------------------------------------------------------
 
 
 async def status_handler(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    store: Store,
-    build_service: BuilderService,
+    update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Handle /status command — show current build status."""
-    global _last_build_time
-    config = store.get_effective_config()
+    """Query Jenkins for current build status."""
+    assert update.message
+    assert update.effective_chat
+    ctx = _get_ctx(context)
+    chat_id = update.effective_chat.id
+
+    if chat_id not in ctx.config.allowed_chat_ids:
+        await update.message.reply_text("❌ Unauthorized.")
+        return
 
     lines = ["📊 *Bot Status*\n"]
 
-    # Build status
-    if build_service.is_building:
-        current = build_service.current_build
-        short = current[:7] if current else "unknown"
-        lines.append(f"🔨 Currently building: `{short}`")
-    else:
-        lines.append("✅ Idle — ready for builds")
-
-    # Cooldown
-    if _last_build_time > 0:
-        elapsed = time.time() - _last_build_time
-        remaining = config.cooldown_seconds - elapsed
-        if remaining > 0:
-            mins = int(remaining // 60)
-            secs = int(remaining % 60)
-            lines.append(f"⏳ Cooldown: {mins}m {secs}s remaining")
-        else:
-            lines.append("✅ No cooldown — ready")
-    else:
-        lines.append("✅ No cooldown — ready")
-
-    # Config summary
-    lines.append("\n📋 *Config*")
-    lines.append(f"▸ Repo: `{config.repo_url or 'Not set'}`")
-    lines.append(f"▸ Build cmd: `{config.build_command}`")
-    lines.append(f"▸ Cooldown: {config.cooldown_seconds}s")
-    lines.append(f"▸ Max builds: {config.max_builds}")
-
-    # OAuth status
-    oauth = store.get_oauth_config()
-    if oauth.refresh_token:
+    # Drive connection
+    if ctx.drive.is_connected():
         lines.append("▸ Drive: ✅ Connected")
     else:
         lines.append("▸ Drive: ❌ Not connected")
+
+    # Pending builds
+    pending_count = len(ctx._pending)
+    if pending_count > 0:
+        lines.append(f"▸ Pending builds: {pending_count}")
+    else:
+        lines.append("▸ Pending builds: None")
+
+    # Jenkins connection check — try to get recent builds
+    try:
+        builds = await ctx.jenkins.get_recent_builds(count=1)
+        if builds:
+            last = builds[0]
+            result = last.get("result") or "IN PROGRESS"
+            lines.append("▸ Jenkins: ✅ Connected")
+            lines.append(f"▸ Last build: #{last['number']} — {result}")
+        else:
+            lines.append("▸ Jenkins: ✅ Connected (no builds yet)")
+    except Exception:
+        lines.append("▸ Jenkins: ❌ Unreachable")
 
     await update.message.reply_text(
         "\n".join(lines), parse_mode="Markdown"
     )
 
 
+# ------------------------------------------------------------------
+# /recent
+# ------------------------------------------------------------------
+
+
 async def recent_handler(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    store: Store,
+    update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Handle /recent command — list recent builds."""
-    builds = store.get_builds()
+    """Query Jenkins for recent build history."""
+    assert update.message
+    assert update.effective_chat
+    ctx = _get_ctx(context)
+    chat_id = update.effective_chat.id
+
+    if chat_id not in ctx.config.allowed_chat_ids:
+        await update.message.reply_text("❌ Unauthorized.")
+        return
+
+    try:
+        builds = await ctx.jenkins.get_recent_builds(count=5)
+    except Exception as e:
+        await update.message.reply_text(f"❌ Failed to query Jenkins: {e}")
+        return
 
     if not builds:
         await update.message.reply_text("📭 No builds yet.")
         return
 
     lines = ["📦 *Recent Builds*\n"]
-    for b in builds[:5]:
-        status_icon = {
-            "success": "✅",
-            "failed": "❌",
-            "building": "🔨",
-        }.get(b.status, "❓")
+    for b in builds:
+        number = b.get("number", "?")
+        result = b.get("result") or "IN PROGRESS"
+        ts = b.get("timestamp", 0)
 
-        line = f"{status_icon} `{b.short_hash}` — {b.timestamp[:16]}"
-        if b.drive_link:
-            line += f" — [Download]({b.drive_link})"
-        lines.append(line)
+        icon = {
+            "SUCCESS": "✅",
+            "FAILURE": "❌",
+            "ABORTED": "⏹️",
+            "IN PROGRESS": "🔨",
+        }.get(result, "❓")
+
+        # Convert Jenkins timestamp (ms) to readable date
+        if ts:
+            dt = datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
+            date_str = dt.strftime("%Y-%m-%d %H:%M UTC")
+        else:
+            date_str = "unknown"
+
+        lines.append(f"{icon} #{number} — {result} — {date_str}")
 
     await update.message.reply_text(
         "\n".join(lines), parse_mode="Markdown"
     )
+
+
+# ------------------------------------------------------------------
+# /connect_drive (ConversationHandler)
+# ------------------------------------------------------------------
+
+
+async def connect_drive_start(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    """Start the Google Drive OAuth flow."""
+    assert update.message
+    assert update.effective_chat
+    ctx = _get_ctx(context)
+    chat_id = update.effective_chat.id
+
+    if chat_id not in ctx.config.allowed_chat_ids:
+        await update.message.reply_text("❌ Unauthorized.")
+        return ConversationHandler.END
+
+    if ctx.drive.is_connected():
+        await update.message.reply_text(
+            "✅ Google Drive is already connected.\n"
+            "Send /connect\\_drive again and paste a new code to "
+            "re-authorize."
+        )
+
+    auth_url = ctx.drive.get_auth_url()
+
+    await update.message.reply_text(
+        "🔗 *Authorize Google Drive access:*\n\n"
+        f"[Click here to authorize]({auth_url})\n\n"
+        "After authorizing, your browser will show "
+        '"can\'t reach this page".\n'
+        "Copy the `code=` value from the URL bar and send it here.\n\n"
+        "_Send /cancel to abort._",
+        parse_mode="Markdown",
+        disable_web_page_preview=True,
+    )
+
+    return AWAITING_CODE
+
+
+async def connect_drive_code(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    """Receive the OAuth code and exchange it for tokens."""
+    assert update.message
+    assert update.message.text
+    ctx = _get_ctx(context)
+    code = update.message.text.strip()
+
+    try:
+        ctx.drive.exchange_code(code)
+        await update.message.reply_text(
+            "✅ Google Drive connected successfully!\n"
+            "You can now use /build to trigger builds."
+        )
+    except Exception as e:
+        logger.exception("OAuth code exchange failed")
+        await update.message.reply_text(
+            f"❌ Failed to connect: {e}\n"
+            f"Try /connect\\_drive again."
+        )
+
+    return ConversationHandler.END
+
+
+async def connect_drive_cancel(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    """Cancel the OAuth flow."""
+    assert update.message
+    await update.message.reply_text("❌ OAuth flow cancelled.")
+    return ConversationHandler.END

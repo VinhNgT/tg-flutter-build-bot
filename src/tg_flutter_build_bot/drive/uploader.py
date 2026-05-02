@@ -1,131 +1,147 @@
-"""Google Drive integration — OAuth2 flow and file upload/management."""
+"""Google Drive integration — Desktop OAuth2 flow and file upload/management."""
 
 from __future__ import annotations
 
+import json
 import logging
+from pathlib import Path
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import Flow
+from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build as build_service
 from googleapiclient.http import MediaFileUpload
-
-from ..config import OAuthConfig
 
 logger = logging.getLogger(__name__)
 
 SCOPES = ["https://www.googleapis.com/auth/drive.file"]
-REDIRECT_PATH = "/oauth/callback"
-
-
-class DriveError(Exception):
-    """Raised when a Drive operation fails."""
+TOKEN_PATH = Path("data/oauth.json")
 
 
 class DriveUploader:
-    """Handles Google OAuth2 and Drive file operations.
+    """Handles Google OAuth2 (Desktop type) and Drive file operations.
 
-    Responsibilities:
-    - Generate OAuth consent URLs
-    - Exchange auth codes for tokens
-    - Upload files to a named folder
-    - Delete files
-    - Auto-refresh access tokens
+    OAuth flow:
+    1. get_auth_url() — generates consent URL for the user
+    2. exchange_code() — exchanges the pasted auth code for tokens
+    3. Tokens are persisted to data/oauth.json and auto-refreshed
     """
 
-    def __init__(self) -> None:
-        self._folder_id_cache: dict[str, str] = {}  # folder_name -> folder_id
-        self._pending_flow: Flow | None = None  # Kept alive for PKCE
+    def __init__(self, client_id: str, client_secret: str) -> None:
+        self._client_id = client_id
+        self._client_secret = client_secret
+        self._folder_id_cache: dict[str, str] = {}
+        self._pending_flow: InstalledAppFlow | None = None
 
-    def get_auth_url(
-        self,
-        client_id: str,
-        client_secret: str,
-        redirect_uri: str,
-    ) -> str:
-        """Generate the Google OAuth consent URL."""
-        flow = Flow.from_client_config(
-            {
-                "web": {
-                    "client_id": client_id,
-                    "client_secret": client_secret,
-                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                    "token_uri": "https://oauth2.googleapis.com/token",
-                }
-            },
+    def _client_config(self) -> dict:
+        """Build the Desktop (installed) OAuth client config."""
+        return {
+            "installed": {
+                "client_id": self._client_id,
+                "client_secret": self._client_secret,
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "redirect_uris": ["http://localhost"],
+            }
+        }
+
+    # ------------------------------------------------------------------
+    # OAuth flow (one-time setup via Telegram /connect_drive)
+    # ------------------------------------------------------------------
+
+    def get_auth_url(self) -> str:
+        """Generate the Google OAuth consent URL for Desktop flow."""
+        flow = InstalledAppFlow.from_client_config(
+            self._client_config(),
             scopes=SCOPES,
-            redirect_uri=redirect_uri,
         )
+        flow.redirect_uri = "http://localhost"
         auth_url, _ = flow.authorization_url(
             access_type="offline",
-            include_granted_scopes="true",
             prompt="consent",
         )
-        # Keep the flow alive — it holds the PKCE code_verifier needed
-        # by exchange_code() to complete the token exchange.
+        # Keep the flow alive for exchange_code()
         self._pending_flow = flow
         return auth_url
 
-    def exchange_code(
-        self,
-        code: str,
-        client_id: str,
-        client_secret: str,
-        redirect_uri: str,
-    ) -> OAuthConfig:
-        """Exchange an authorization code for OAuth tokens."""
+    def exchange_code(self, code: str) -> None:
+        """Exchange an authorization code for OAuth tokens and save them."""
         flow = self._pending_flow
         if flow is None:
-            raise DriveError(
-                "No pending OAuth flow — please start the login again."
+            raise RuntimeError(
+                "No pending OAuth flow — run /connect_drive first."
             )
         self._pending_flow = None
 
         flow.fetch_token(code=code)
         creds = flow.credentials
 
-        return OAuthConfig(
-            client_id=client_id,
-            client_secret=client_secret,
-            refresh_token=creds.refresh_token or "",
-            access_token=creds.token or "",
+        # Save tokens to disk
+        TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
+        TOKEN_PATH.write_text(
+            json.dumps(
+                {
+                    "token": creds.token,
+                    "refresh_token": creds.refresh_token,
+                    "token_uri": creds.token_uri,
+                    "client_id": creds.client_id,
+                    "client_secret": creds.client_secret,
+                    "scopes": list(creds.scopes or []),
+                }
+            )
         )
+        logger.info("OAuth tokens saved to %s", TOKEN_PATH)
 
-    def _get_credentials(self, oauth: OAuthConfig) -> Credentials:
-        """Build google.oauth2 Credentials from our config, refreshing if needed."""
+    # ------------------------------------------------------------------
+    # Token management
+    # ------------------------------------------------------------------
+
+    def load_tokens(self) -> Credentials | None:
+        """Load saved OAuth tokens from disk, refreshing if needed."""
+        if not TOKEN_PATH.exists():
+            return None
+
+        data = json.loads(TOKEN_PATH.read_text())
         creds = Credentials(
-            token=oauth.access_token,
-            refresh_token=oauth.refresh_token,
-            token_uri="https://oauth2.googleapis.com/token",
-            client_id=oauth.client_id,
-            client_secret=oauth.client_secret,
-            scopes=SCOPES,
+            token=data.get("token"),
+            refresh_token=data.get("refresh_token"),
+            token_uri=data.get(
+                "token_uri", "https://oauth2.googleapis.com/token"
+            ),
+            client_id=data.get("client_id", self._client_id),
+            client_secret=data.get("client_secret", self._client_secret),
+            scopes=data.get("scopes"),
         )
-        if not creds.valid:
-            creds.refresh(Request())
-            # Update our config with new access token
-            oauth.access_token = creds.token or ""
-        return creds
 
-    def _get_drive_service(self, oauth: OAuthConfig):
+        if not creds.valid and creds.refresh_token:
+            creds.refresh(Request())
+            # Persist the refreshed access token
+            data["token"] = creds.token
+            TOKEN_PATH.write_text(json.dumps(data))
+
+        return creds if creds.valid else None
+
+    def is_connected(self) -> bool:
+        """Check if Google Drive is connected (valid tokens exist)."""
+        return self.load_tokens() is not None
+
+    # ------------------------------------------------------------------
+    # Drive file operations
+    # ------------------------------------------------------------------
+
+    def _get_drive_service(self, creds: Credentials):
         """Build an authenticated Drive API service."""
-        creds = self._get_credentials(oauth)
         return build_service("drive", "v3", credentials=creds)
 
     async def ensure_folder(
-        self, oauth: OAuthConfig, folder_name: str
+        self, creds: Credentials, folder_name: str
     ) -> str:
-        """Find or create a Drive folder by name. Returns folder ID.
-
-        Searches for an existing folder with the given name in the root.
-        Creates one if not found. Caches the result.
-        """
+        """Find or create a Drive folder by name. Returns folder ID."""
         if folder_name in self._folder_id_cache:
             return self._folder_id_cache[folder_name]
 
-        service = self._get_drive_service(oauth)
+        service = self._get_drive_service(creds)
 
-        # Search for existing folder
         query = (
             f"name = '{folder_name}' and "
             f"mimeType = 'application/vnd.google-apps.folder' and "
@@ -146,7 +162,6 @@ class DriveUploader:
                 folder_id,
             )
         else:
-            # Create the folder
             file_metadata = {
                 "name": folder_name,
                 "mimeType": "application/vnd.google-apps.folder",
@@ -158,7 +173,9 @@ class DriveUploader:
             )
             folder_id = folder["id"]
             logger.info(
-                "Created Drive folder '%s' (ID: %s)", folder_name, folder_id
+                "Created Drive folder '%s' (ID: %s)",
+                folder_name,
+                folder_id,
             )
 
         self._folder_id_cache[folder_name] = folder_id
@@ -168,26 +185,16 @@ class DriveUploader:
         self,
         file_path: str,
         filename: str,
-        oauth: OAuthConfig,
+        creds: Credentials,
         folder_id: str,
     ) -> tuple[str, str]:
         """Upload a file to Google Drive.
 
-        Args:
-            file_path: Local path to the file.
-            filename: Name for the file on Drive.
-            oauth: OAuth config with valid tokens.
-            folder_id: Drive folder ID to upload into.
-
-        Returns:
-            (file_id, web_view_link) tuple.
+        Returns (file_id, web_view_link).
         """
-        service = self._get_drive_service(oauth)
+        service = self._get_drive_service(creds)
 
-        file_metadata = {
-            "name": filename,
-            "parents": [folder_id],
-        }
+        file_metadata = {"name": filename, "parents": [folder_id]}
         media = MediaFileUpload(
             file_path,
             mimetype="application/vnd.android.package-archive",
@@ -207,7 +214,6 @@ class DriveUploader:
         )
 
         file_id = file["id"]
-        web_link = file.get("webViewLink", "")
 
         # Make file viewable by anyone with the link
         service.permissions().create(
@@ -221,29 +227,20 @@ class DriveUploader:
             .get(fileId=file_id, fields="webViewLink")
             .execute()
         )
-        web_link = file.get("webViewLink", web_link)
+        web_link = file.get("webViewLink", "")
 
         logger.info("Uploaded: %s -> %s", filename, web_link)
         return file_id, web_link
 
     async def delete_file(
-        self, file_id: str, oauth: OAuthConfig
+        self, file_id: str, creds: Credentials
     ) -> None:
         """Delete a file from Google Drive."""
         try:
-            service = self._get_drive_service(oauth)
+            service = self._get_drive_service(creds)
             service.files().delete(fileId=file_id).execute()
             logger.info("Deleted Drive file: %s", file_id)
         except Exception as e:
-            logger.warning("Failed to delete Drive file %s: %s", file_id, e)
-
-    async def check_file_exists(
-        self, file_id: str, oauth: OAuthConfig
-    ) -> bool:
-        """Check if a file still exists on Drive."""
-        try:
-            service = self._get_drive_service(oauth)
-            service.files().get(fileId=file_id, fields="id").execute()
-            return True
-        except Exception:
-            return False
+            logger.warning(
+                "Failed to delete Drive file %s: %s", file_id, e
+            )

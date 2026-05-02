@@ -1,1 +1,3 @@
-"""Telegram Flutter Build Bot — Generic APK builder with Google Drive upload."""
+"""Telegram bot that triggers Jenkins Flutter builds and uploads APKs to Google Drive."""
+
+__version__ = "0.2.0"
